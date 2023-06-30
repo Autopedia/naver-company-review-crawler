@@ -12,6 +12,11 @@ from selenium.common.exceptions import NoSuchElementException
 from tqdm import tqdm
 import re
 
+import signal
+import sys
+
+import pickle
+
 import random
 from selenium import webdriver
 from selenium.webdriver.common.keys import Keys
@@ -23,17 +28,15 @@ from selenium.webdriver.safari.options import Options as SafariOptions
 import time
 
 def main():
+    num = 1
+    print(num)
     searchable_company = pd.read_csv("SearchableCompany.csv")
-    naver_ids = list(searchable_company['naverId'])
+    naver_ids = list(searchable_company['naverId'])[1556:]
 
     company_review_urls = []
-    c = 6
-    print(c)
-    for naver_id in naver_ids[100*c:100*(c+1)]:
+    for naver_id in naver_ids:
         url = ''.join(["https://pcmap.place.naver.com/place/", str(naver_id), "/review/visitor"])
         company_review_urls.append(url)
-
-    df = pd.DataFrame({"naver_id": naver_ids[100*c:100*(c+1)], "company_url": company_review_urls})
 
     PROXY = "127.0.0.1:22999"
     PATH = "./geckodriver" #Path to chromedriver (Adjust as needed)
@@ -45,24 +48,24 @@ def main():
     count = 0 #
     current = 0 #현재 진행 상황
 
-    goal = len(df['naver_id']) #총 식당 수
+    goal = len(company_review_urls) #총 식당 수
 
     #데이터 프레임으로 만들 빈 리스트 생성
     rev_list=[]
 
+    def signal_handler(sig, frame):
+        print('You pressed Ctrl+C!')
+        with open(f"review{num}.plk", "wb") as fp:   #Pickling
+            pickle.dump(rev_list, fp)
+        sys.exit(0)
 
-    for i in range(len(df)):
-
+    for i in range(len(company_review_urls)):
         current += 1
         print('진행상황 : ', current,'/',goal,sep="")
-
-
         # 식당 리뷰 개별 url 접속
-        print(df['company_url'][i])
-        driver.get(df['company_url'][i])
-        thisurl = df['company_url'][i]
-        time.sleep(2)
-        print('현재 수집중인 식당 : ', df['naver_id'][i])
+        driver.get(company_review_urls[i])
+        time.sleep(1)
+        print('현재 수집중인 식당 : ', naver_ids[i])
 
         #리뷰 더보기 버튼 누르기
         while True:
@@ -70,11 +73,13 @@ def main():
                 driver.find_element(By.CLASS_NAME, 'lfH3O > a')
                 driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.END)
                 time.sleep(1)
-                # driver.execute_script('return document.querySelector("div.lfH3O > a").click()')
-                time.sleep(2)
+                driver.execute_script('return document.querySelector("div.lfH3O > a").click()')
+                time.sleep(1)
 
             except NoSuchElementException:
                 print("-모든 리뷰 더보기 완료-")
+                with open(f"review{num}.plk", "wb") as fp:   #Pickling
+                    pickle.dump(rev_list, fp)
                 break
 
         # #식당 평균 별점 수집
@@ -125,7 +130,7 @@ def main():
                             if len(user_review) > 0:
                                 rev_list.append(
                                     [
-                                        df['naver_id'][i],
+                                        naver_ids[i],
                                         '',
                                         user_review[0].text
                                     ]
@@ -143,7 +148,7 @@ def main():
                             if len(user_review) > 0:
                                 rev_list.append(
                                     [
-                                        df['naver_id'][i],
+                                        naver_ids[i],
                                         '',
                                         user_review[0].text
                                     ]
@@ -155,7 +160,6 @@ def main():
 
             else:
                 print('리뷰 선택자가 인식되지 않음')
-                time.sleep(1)
 
 
 
@@ -178,14 +182,23 @@ def main():
         # driver.switch_to.window(tabs[0])
         print("기본 페이지로 돌아가기")
 
+        # data = pd.read_csv("data.csv", index_col=False)
+        # data = pd.concat([data, pd.DataFrame(rev_list, columns=['naver_id', 'rating', 'review'])])
+        # data.to_csv("data.csv", index=False)
+        signal.signal(signal.SIGINT, signal_handler)
 
     driver.close()
 
-    #스크래핑한 데이터를 데이터 프레임으로 만들기
-    column = ["naver_id", "rating", "review"]
-    df2 = pd.DataFrame(rev_list, columns=column)
+    with open(f"review{num}.plk", "wb") as fp:   #Pickling
+        pickle.dump(rev_list, fp)
 
-    df2.drop(['rating'], axis=1).to_csv(f"test{c+6}.csv")
+
+
+    # # 스크래핑한 데이터를 데이터 프레임으로 만들기
+    # column = ["naver_id", "rating", "review"]
+    # df2 = pd.DataFrame(rev_list, columns=column)
+
+    # df2.drop(['rating'], axis=1).to_csv(f"2000.csv")
 
 if __name__ == "__main__":
     main()
